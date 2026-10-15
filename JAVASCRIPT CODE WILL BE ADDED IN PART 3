@@ -1,0 +1,183 @@
+const imageInput = document.getElementById("imageInput");
+const cameraButton = document.getElementById("cameraButton");
+const imagePreview = document.getElementById("imagePreview");
+const imageInfo = document.getElementById("imageInfo");
+const gpsInfo = document.getElementById("gpsInfo");
+const googleMapsLink = document.getElementById("googleMapsLink");
+const aiResult = document.getElementById("aiResult");
+
+let map;
+let marker;
+
+function initializeMap() {
+    if (typeof L === "undefined") {
+        gpsInfo.textContent =
+            "Map library hin banamne. Internet kee ilaali.";
+        return;
+    }
+
+    map = L.map("map").setView([9.145, 40.489], 5);
+
+    L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        {
+            maxZoom: 19,
+            attribution: "Tiles © Esri"
+        }
+    ).addTo(map);
+}
+
+initializeMap();
+
+imageInput.addEventListener("change", function () {
+    const file = this.files[0];
+
+    if (file) {
+        analyseImage(file);
+    }
+});
+
+cameraButton.addEventListener("click", function () {
+    const cameraInput = document.createElement("input");
+
+    cameraInput.type = "file";
+    cameraInput.accept = "image/*";
+    cameraInput.capture = "environment";
+
+    cameraInput.addEventListener("change", function () {
+        const file = this.files[0];
+
+        if (file) {
+            analyseImage(file);
+        }
+    });
+
+    cameraInput.click();
+});
+
+async function analyseImage(file) {
+    if (!file.type.startsWith("image/")) {
+        alert("Maaloo image file filadhu.");
+        return;
+    }
+
+    imagePreview.innerHTML = "";
+    imageInfo.innerHTML = "";
+
+    const img = document.createElement("img");
+    const imageURL = URL.createObjectURL(file);
+
+    img.src = imageURL;
+    img.alt = "Selected photo";
+
+    imagePreview.appendChild(img);
+
+    img.onload = async function () {
+        addInfo("File name", file.name);
+        addInfo("File type", file.type);
+        addInfo("File size", (file.size / 1024).toFixed(2) + " KB");
+        addInfo(
+            "Image dimensions",
+            img.naturalWidth + " × " + img.naturalHeight
+        );
+
+        let metadata = {};
+
+        if (window.exifr) {
+            try {
+                metadata = await exifr.parse(file, { gps: true }) || {};
+            } catch (error) {
+                console.error("Metadata error:", error);
+            }
+        }
+
+        addInfo("Camera make", metadata.Make || "Not available");
+        addInfo("Camera model", metadata.Model || "Not available");
+        addInfo(
+            "Capture date",
+            metadata.DateTimeOriginal || "Not available"
+        );
+        addInfo("Software", metadata.Software || "Not available");
+
+        if (
+            Number.isFinite(metadata.latitude) &&
+            Number.isFinite(metadata.longitude)
+        ) {
+            showLocation(
+                metadata.latitude,
+                metadata.longitude
+            );
+        } else {
+            gpsInfo.textContent =
+                "GPS metadata hin argamne. Location sirrii murteessuun hin danda'amu.";
+            googleMapsLink.hidden = true;
+        }
+
+        aiResult.textContent =
+            "AI detection model hin hidhamne. Metadata qofaan fakkiin AI'n uumame ta'uu isaa mirkaneessuun hin danda'amu.";
+
+        addInfo(
+            "Ethiopian calendar",
+            metadata.DateTimeOriginal
+                ? convertToEthiopianDate(metadata.DateTimeOriginal)
+                : "Not available"
+        );
+    };
+}
+
+function addInfo(label, value) {
+    const p = document.createElement("p");
+    const strong = document.createElement("strong");
+
+    strong.textContent = label + ": ";
+    p.appendChild(strong);
+    p.appendChild(document.createTextNode(String(value)));
+
+    imageInfo.appendChild(p);
+}
+
+function showLocation(latitude, longitude) {
+    gpsInfo.textContent =
+        "Latitude: " + latitude +
+        " | Longitude: " + longitude;
+
+    googleMapsLink.href =
+        "https://www.google.com/maps?q=" +
+        latitude + "," + longitude;
+
+    googleMapsLink.hidden = false;
+
+    if (map && typeof L !== "undefined") {
+        if (marker) {
+            marker.remove();
+        }
+
+        marker = L.marker([latitude, longitude])
+            .addTo(map)
+            .bindPopup("Photo GPS Location");
+
+        map.setView([latitude, longitude], 16);
+    }
+}
+
+function convertToEthiopianDate(dateValue) {
+    const date = new Date(dateValue);
+
+    if (isNaN(date.getTime())) {
+        return "Date sirrii hin jiru";
+    }
+
+    try {
+        return new Intl.DateTimeFormat(
+            "en-u-ca-ethiopic",
+            {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+                timeZone: "UTC"
+            }
+        ).format(date);
+    } catch (error) {
+        return "Calendar conversion hin danda'amne";
+    }
+}
